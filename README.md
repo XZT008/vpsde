@@ -3,6 +3,16 @@
 # vpsde
 Implementation(mostly from original implementation) and explanation of VPSDE
 
+# TODOS
+- [x] Foward Process
+- [x] Predictor-Corrector sampling (pc sampling) 
+- [x] Train and sample script with MNIST
+- [ ] ODE sampling
+- [ ] Likelihood estimation
+- [ ] BPD evaluation
+- [ ] Parameter tuning with Ray
+- [ ] Separate train script for different datasets
+
 # Reference:
 - **Original paper:**[Score-Based Generative Modeling through Stochastic Differential Equations](https://arxiv.org/pdf/2011.13456.pdf)
 - [Official implementation](https://github.com/yang-song/score_sde_pytorch)
