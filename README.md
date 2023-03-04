@@ -15,8 +15,10 @@ Implementation(mostly from original implementation) and explanation of VPSDE
 
 # Reference:
 - **Original paper:**[Score-Based Generative Modeling through Stochastic Differential Equations](https://arxiv.org/pdf/2011.13456.pdf)
-- [Official implementation](https://github.com/yang-song/score_sde_pytorch)
+- [Song's Official implementation](https://github.com/yang-song/score_sde_pytorch)
 - **Unet:**  [Score network](https://github.com/CW-Huang/sdeflow-light/blob/main/lib/models/unet.py)
+- **Song's tutorial for score-based generative model** [Colab link](https://colab.research.google.com/drive/120kYYBOVa1i0TD85RjlEkFjaWDxSFUx3?usp=sharing)
+    - This is a really great tutorial but it only focused on VESDE.
 
 # Explanation:
 ## VP Forward process (Adding noise):
