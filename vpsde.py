@@ -198,6 +198,10 @@ class VQSDE(pl.LightningModule):
         self.log('DSM_loss_train', loss)
         return loss
 
+    def on_train_epoch_end(self):
+        epoch = self.current_epoch
+        self.trainer.save_checkpoint(filepath=f'./checkpoints/{epoch}.ckpt')
+
     def validation_step(self, batch, batch_idx):
         x, _ = batch
         if batch_idx < self.config.bpd_batch_num:

@@ -29,7 +29,7 @@ class VQSDE_CONFIG:
         self.method = 'RK45'
 
         # which sampler to use, 'ode', 'pc', or 'both'
-        self.sampler = 'no_sample'
+        self.sampler = 'both'
 
         # bpd eval param
         self.bpd_rtol = 1e-5
@@ -40,4 +40,5 @@ class VQSDE_CONFIG:
 
         # logging
         self.log_dir = 'log/'
+        # self.checkpoints_dir = './checkpoints/'
 
