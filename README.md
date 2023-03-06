@@ -21,6 +21,8 @@ You can modify tune_config in tune_script.py, if you want to use different param
 
 For this script, I tuned over learning rate, batch size, number of resblock in Unet, channel multiplier of Unet, and sampling eps which is used to estimate bits per dim. 
 
+![tuning demo](https://github.com/XZT008/vpsde/blob/main/tuning_demo.png)
+
 **To train and sample:**
 ```
 python run_script.py
