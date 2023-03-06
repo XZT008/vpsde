@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
 from tqdm import tqdm
 from utils import savefig, show_samples
+from scipy import integrate
 
 
 class VQSDE(nn.Module):
@@ -72,12 +73,20 @@ class VQSDE(nn.Module):
         return dsm_loss
 
     # below are sampling related functions
-    def rsde(self, x, t, probability_flow=False):
+
+    # reverse of sde
+    def rsde(self, x, t):
         drift, diffusion = self.sde(x, t)
         score = self.score_fn(x, t)
-        drift = drift - diffusion[:, None, None, None] ** 2 * score * (0.5 if probability_flow else 1.)
-        diffusion = 0. if probability_flow else diffusion
+        drift = drift - diffusion[:, None, None, None] ** 2 * score
         return drift, diffusion
+
+    def rode(self, x, t):
+        drift, diffusion = self.sde(x, t)
+        score = self.score_fn(x, t)
+        drift = drift - 0.5 * diffusion[:, None, None, None] ** 2 * score
+        diffusion = 0                   # this is to correspond with rsde
+        return drift
 
     # langevin dynamics
     def corrector(self, x, t):
@@ -102,7 +111,7 @@ class VQSDE(nn.Module):
         return x, x_mean
 
     # pc sampler
-    def pc_sample(self, batch_size=64, use_corrector=True):
+    def pc_sampler(self, batch_size=64, use_corrector=True):
         with torch.no_grad():
             x = torch.randn(batch_size, self.c, self.img_height, self.img_height).cuda()
             time_steps = torch.linspace(1.0, self.sample_eps, self.N)
@@ -115,6 +124,65 @@ class VQSDE(nn.Module):
 
             return x_mean
 
+    # function used by scipy.integrate.solve_ivp
+    def ode_func_sampling(self, t, x):
+        # convert x from (n, ) ndarray to batch of images in torch tensor
+        x = x.reshape((self.samples_batch_size, self.c, self.img_height, self.img_height))
+        x = torch.from_numpy(x).cuda().type(torch.float32)
+        vec_t = torch.ones(self.samples_batch_size).cuda() * t
+        drift = self.rode(x, vec_t)
+        return drift.detach().cpu().numpy().reshape((-1,))          # need to return a ndarray of shape(n, )
+
+    def ode_sampler(self, batch_size=64, rtol=1e-5, atol=1e-5, method='RK45', eps=1e-3):
+        self.samples_batch_size = batch_size
+        with torch.no_grad():
+            x = torch.randn(batch_size, self.c, self.img_height, self.img_height).cuda()
+            solution = integrate.solve_ivp(self.ode_func_sampling, (self.T, eps), x.detach().cpu().numpy().reshape((-1,)),
+                                           rtol=rtol, atol=atol, method=method)
+            x = torch.tensor(solution.y[:, -1]).reshape(batch_size, self.c, self.img_height, self.img_height).cuda().type(torch.float32)
+        return x
+
+    def log_pT_xT(self, z):
+        N = np.prod(self.c * self.img_height * self.img_height)
+        log_prop = N * (np.log(1.0/np.sqrt(2*np.pi))) - 0.5 * torch.sum(z ** 2, dim=(1, 2, 3))
+        return log_prop
+
+    def ode_func_likelihood_estimation(self, t, x):
+        sample = torch.from_numpy(x[:self.cut_off_pos]).reshape(self.likelihood_data_shape).cuda().type(torch.float32)
+        vec_t = torch.ones(sample.shape[0]).cuda() * t
+        with torch.enable_grad():
+            sample.requires_grad = True
+            drift = self.rode(sample, vec_t)
+            grad_fn_eps = torch.autograd.grad(torch.sum(drift * self.epsilon), sample)[0]
+        sample.requires_grad = False
+        with torch.no_grad():
+            div = torch.sum(grad_fn_eps * self.epsilon, dim=(1, 2, 3)).reshape(-1).detach().cpu().numpy()
+            drift = drift.reshape(-1).detach().cpu().numpy()
+        return np.concatenate([drift, div], axis=0)
+
+    def likelihood_estimation(self, data, rtol=1e-5, atol=1e-5, method='RK45', eps=1e-5):
+        with torch.no_grad():
+            self.epsilon = torch.randn_like(data).cuda()
+            self.likelihood_estimation_batch_size = data.shape[0]
+            self.cut_off_pos = self.likelihood_estimation_batch_size * self.c * self.img_height * self.img_height
+            self.likelihood_data_shape = data.shape
+
+            init = np.concatenate([data.detach().cpu().numpy().reshape((-1,)), np.zeros((self.likelihood_estimation_batch_size,))], axis=0)
+            solution = integrate.solve_ivp(self.ode_func_likelihood_estimation, (eps, self.T), init, rtol=rtol, atol=atol, method=method)
+            zp = solution.y[:, -1]
+            z = torch.from_numpy(zp[:self.cut_off_pos]).reshape(self.likelihood_data_shape).cuda().type(torch.float32)
+            delta_logp = torch.from_numpy(zp[self.cut_off_pos:]).cuda().type(torch.float32)
+            log_pt_xt = self.log_pT_xT(z)
+            log_likelihood = (log_pt_xt + delta_logp).detach().cpu().numpy()
+            return log_likelihood
+
+    def bpd_calculation(self, data, rtol=1e-5, atol=1e-5, method='RK45', eps=1e-5):
+        log_likelihood = self.likelihood_estimation(data, rtol, atol, method, eps)
+        bpd = -log_likelihood / np.log(2)                   # change base from e to 2
+        bpd = bpd / (self.c * self.img_height * self.img_height) + 8
+        return bpd
+
+
 
 if __name__ == '__main__':
     """
@@ -123,17 +191,20 @@ if __name__ == '__main__':
     dsm_loss = model.dsm_loss(batch_x)
     """
 
-
     dataset = MNIST('./mnist/', train=True, transform=transforms.ToTensor(), download=True)
+    testset = MNIST('./mnist/', train=False, transform=transforms.ToTensor(), download=True)
 
-    data_loader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=0)
+    data_loader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=0)
+    test_loader = DataLoader(testset, batch_size=1024, shuffle=True, num_workers=0)
     model = VQSDE().cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     epochs = 50
+    use_pc_sampler = False              # use ode sampler if use_pc_sampler is False
 
     for epoch in tqdm(range(epochs)):
         avg_loss = 0.
         num_items = 0
+        bpds = []
         for x, _ in data_loader:
             x = x.cuda()
             loss = model.dsm_loss(x)
@@ -143,12 +214,30 @@ if __name__ == '__main__':
             avg_loss += loss.item() * x.shape[0]
             num_items += x.shape[0]
         print('Average Loss: {:5f}'.format(avg_loss / num_items))
+
+        with torch.no_grad():
+            for i in range(1):
+                count = 0
+                for x, _ in test_loader:
+                    x = x.cuda()
+                    x = (x * 255. + torch.rand_like(x)) / 256.
+                    bpd = model.bpd_calculation(x)
+                    bpds.extend(bpd)
+                    count += 1
+                    if count > 3:
+                        break
+        print("BPD: {:5f}".format(np.mean(np.asarray(bpds))))
+
+
+        """
         if epoch > 4 and epoch % 5 == 0:
-            samples = model.pc_sample().detach().cpu()
+            
+            if use_pc_sampler:
+                samples = model.pc_sampler().detach().cpu()
+            else:
+                samples = model.ode_sampler()
+                samples = samples.detach().cpu()
             show_samples(samples, fname=f'./samples/{epoch}.png', nrow=8, title='Samples')
+        """
 
-
-
-
-    print()
 
