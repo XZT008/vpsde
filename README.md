@@ -9,8 +9,11 @@ Implementation(mostly from original implementation) and explanation of VPSDE
 - [x] ODE sampling
 - [x] Likelihood estimation
 - [x] BPD evaluation
-- [ ] Parameter tuning with Ray
-- [ ] Separate train script for different datasets
+- [x] Parameter tuning with Ray
+
+
+
+
 
 # Reference:
 - **Original paper:**[Score-Based Generative Modeling through Stochastic Differential Equations](https://arxiv.org/pdf/2011.13456.pdf)
