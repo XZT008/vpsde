@@ -17,7 +17,7 @@ Implementation(mostly from original implementation) and explanation of VPSDE
 ```
 python tune_script.py
 ```
-You can modify tune_config in tune_script.py if you want to use different parameter range, or add/remove hyperparameter search space. You need to set self.sampler=None during tuning if you are only interested in BPD.
+You can modify tune_config in tune_script.py, if you want to use different parameter range, or add/remove hyperparameter search space. There won't be any sample generated during tuning due to time constraint.
 
 For this script, I tuned over learning rate, batch size, number of resblock in Unet, channel multiplier of Unet, and sampling eps which is used to estimate bits per dim. 
 
@@ -25,7 +25,10 @@ For this script, I tuned over learning rate, batch size, number of resblock in U
 ```
 python run_script.py
 ```
-You can set hyperparameters in config.py. If not, it is set to be the value used in original paper. Note that you should set self.sampler in config.py to 'ode', 'pc', or 'both', if you want to generate sample every epoch during training and testing.
+You can set hyperparameters in config.py based on tuning result. If not, it is set to be the value used in original paper. Note that you should set self.sampler in config.py to 'ode', 'pc', or 'both', if you want to generate sample every epoch during training and testing.
+
+# Requirement:
+- torch, pytorch-lightning, torchvision
 
 # Reference:
 - **Original paper:**[Score-Based Generative Modeling through Stochastic Differential Equations](https://arxiv.org/pdf/2011.13456.pdf)
