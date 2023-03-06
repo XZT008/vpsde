@@ -28,6 +28,7 @@ python run_script.py
 You can set hyperparameters in config.py based on tuning result. If not, it is set to be the value used in original paper. Note that you should set self.sampler in config.py to 'ode', 'pc', or 'both', if you want to generate sample every epoch during training and testing.
 
 # Requirement:
+- torch, pytorch-lightning, torchvision
 
 # Reference:
 - **Original paper:**[Score-Based Generative Modeling through Stochastic Differential Equations](https://arxiv.org/pdf/2011.13456.pdf)
