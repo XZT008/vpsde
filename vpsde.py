@@ -1,36 +1,46 @@
 import numpy as np
 from network import UNet
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-from torchvision.datasets import MNIST
-from tqdm import tqdm
-from utils import savefig, show_samples
+from utils import show_samples
 from scipy import integrate
+from config import VQSDE_CONFIG
+import pytorch_lightning as pl
 
 
-class VQSDE(nn.Module):
-    def __init__(self, num_chann=1, img_height=28, T=1.0, beta_min=0.1, beta_max=20, eps=1e-5, N=1000, M=10,
-                 sample_eps=1e-3, snr=0.16):
+class VQSDE(pl.LightningModule):
+    def __init__(self, cfg, tune_cfg=None, if_tune=False):
         super(VQSDE, self).__init__()
-        self.score_func = UNet(input_channels=num_chann,
-                               input_height=img_height,
-                               ch=32,
-                               ch_mult=(1, 2, 2),
-                               num_res_blocks=2,
-                               attn_resolutions=(16,),
-                               resamp_with_conv=True, )
-        self.c = num_chann
-        self.img_height = img_height
-        self.T = T
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        self.eps = eps
-        self.N = N
-        self.M = M
-        self.sample_eps = sample_eps
-        self.snr = snr
+        if if_tune is not False:
+            assert tune_cfg is not None
+        self.if_tune = if_tune
+        self.config = cfg
+        self.tune_config = tune_cfg
+        if not if_tune:
+            self.score_func = UNet(input_channels=self.config.num_chann,
+                                   input_height=self.config.img_height,
+                                   ch=32,
+                                   ch_mult=self.config.ch_mult,
+                                   num_res_blocks=self.config.num_res_blocks,
+                                   attn_resolutions=(16,),
+                                   resamp_with_conv=True, )
+        else:
+            self.score_func = UNet(input_channels=self.config.num_chann,
+                                   input_height=self.config.img_height,
+                                   ch=32,
+                                   ch_mult=tune_cfg['ch_mult'],
+                                   num_res_blocks=tune_cfg['num_res_blocks'],
+                                   attn_resolutions=(16,),
+                                   resamp_with_conv=True, )
+        self.c = self.config.num_chann
+        self.img_height = self.config.img_height
+        self.T = self.config.T
+        self.beta_min = self.config.beta_min
+        self.beta_max = self.config.beta_max
+        self.eps = self.config.eps
+        self.N = self.config.N
+        self.M = self.config.M
+        self.sample_eps = self.config.sample_eps
+        self.snr = self.config.snr
 
     def sde(self, x, t):
         beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
@@ -133,11 +143,11 @@ class VQSDE(nn.Module):
         drift = self.rode(x, vec_t)
         return drift.detach().cpu().numpy().reshape((-1,))          # need to return a ndarray of shape(n, )
 
-    def ode_sampler(self, batch_size=64, rtol=1e-5, atol=1e-5, method='RK45', eps=1e-3):
+    def ode_sampler(self, batch_size=64, rtol=1e-5, atol=1e-5, method='RK45'):
         self.samples_batch_size = batch_size
         with torch.no_grad():
             x = torch.randn(batch_size, self.c, self.img_height, self.img_height).cuda()
-            solution = integrate.solve_ivp(self.ode_func_sampling, (self.T, eps), x.detach().cpu().numpy().reshape((-1,)),
+            solution = integrate.solve_ivp(self.ode_func_sampling, (self.T, self.sample_eps), x.detach().cpu().numpy().reshape((-1,)),
                                            rtol=rtol, atol=atol, method=method)
             x = torch.tensor(solution.y[:, -1]).reshape(batch_size, self.c, self.img_height, self.img_height).cuda().type(torch.float32)
         return x
@@ -180,64 +190,48 @@ class VQSDE(nn.Module):
         log_likelihood = self.likelihood_estimation(data, rtol, atol, method, eps)
         bpd = -log_likelihood / np.log(2)                   # change base from e to 2
         bpd = bpd / (self.c * self.img_height * self.img_height) + 8
-        return bpd
+        return np.mean(bpd)
 
+    def training_step(self, batch, batch_idx):
+        x, _ = batch
+        loss = self.dsm_loss(x)
+        self.log('DSM_loss_train', loss)
+        return loss
 
-
-if __name__ == '__main__':
-    """
-    model = VQSDE().cuda()
-    batch_x = torch.randn(10, 1, 28, 28).cuda()
-    dsm_loss = model.dsm_loss(batch_x)
-    """
-
-    dataset = MNIST('./mnist/', train=True, transform=transforms.ToTensor(), download=True)
-    testset = MNIST('./mnist/', train=False, transform=transforms.ToTensor(), download=True)
-
-    data_loader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=0)
-    test_loader = DataLoader(testset, batch_size=1024, shuffle=True, num_workers=0)
-    model = VQSDE().cuda()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    epochs = 50
-    use_pc_sampler = False              # use ode sampler if use_pc_sampler is False
-
-    for epoch in tqdm(range(epochs)):
-        avg_loss = 0.
-        num_items = 0
-        bpds = []
-        for x, _ in data_loader:
-            x = x.cuda()
-            loss = model.dsm_loss(x)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            avg_loss += loss.item() * x.shape[0]
-            num_items += x.shape[0]
-        print('Average Loss: {:5f}'.format(avg_loss / num_items))
-
-        with torch.no_grad():
-            for i in range(1):
-                count = 0
-                for x, _ in test_loader:
-                    x = x.cuda()
-                    x = (x * 255. + torch.rand_like(x)) / 256.
-                    bpd = model.bpd_calculation(x)
-                    bpds.extend(bpd)
-                    count += 1
-                    if count > 3:
-                        break
-        print("BPD: {:5f}".format(np.mean(np.asarray(bpds))))
-
-
-        """
-        if epoch > 4 and epoch % 5 == 0:
-            
-            if use_pc_sampler:
-                samples = model.pc_sampler().detach().cpu()
+    def validation_step(self, batch, batch_idx):
+        x, _ = batch
+        if batch_idx < self.config.bpd_batch_num:
+            x_uniform_deq = (x * 255. + torch.rand_like(x)) / 256.
+            if self.if_tune:
+                bpd = self.bpd_calculation(x_uniform_deq, rtol=self.config.bpd_rtol, atol=self.config.bpd_atol,
+                                           method=self.config.bpd_method, eps=self.tune_config['sampling_eps'])
             else:
-                samples = model.ode_sampler()
-                samples = samples.detach().cpu()
-            show_samples(samples, fname=f'./samples/{epoch}.png', nrow=8, title='Samples')
-        """
+                bpd = self.bpd_calculation(x_uniform_deq, rtol=self.config.bpd_rtol, atol=self.config.bpd_atol,
+                                           method=self.config.bpd_method, eps=self.config.bpd_eps)
+            self.log('BPD', bpd)
+        loss = self.dsm_loss(x)
+        self.log('DSM_loss_test', loss)
+        return loss
 
+    def on_validation_epoch_end(self):
+        epoch = self.current_epoch
+        if self.config.sampler == 'both':
+            pc_samples = self.pc_sampler(batch_size=self.config.pc_sample_batch_size,
+                                         use_corrector=self.config.use_corrector).detach().cpu()
+            ode_samples = self.ode_sampler(batch_size=self.config.ode_sample_batch_size, rtol=self.config.rtol,
+                                           atol=self.config.atol, method=self.config.method).detach().cpu()
+            show_samples(pc_samples, fname=f'./pc_samples/{epoch}.png')
+            show_samples(ode_samples, fname=f'./ode_samples/{epoch}.png')
+        elif self.config.sampler == 'pc':
+            pc_samples = self.pc_sampler(batch_size=self.config.pc_sample_batch_size,
+                                         use_corrector=self.config.use_corrector).detach().cpu()
+            show_samples(pc_samples, fname=f'./pc_samples/{epoch}.png')
+        elif self.config.sampler == 'ode':
+            ode_samples = self.ode_sampler(batch_size=self.config.ode_sample_batch_size, rtol=self.config.rtol,
+                                           atol=self.config.atol, method=self.config.method).detach().cpu()
+            show_samples(ode_samples, fname=f'./ode_samples/{epoch}.png')
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
+        return optimizer
 

@@ -5,7 +5,7 @@ from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 
 
-def savefig(fname, show_figure=True):
+def savefig(fname, show_figure=False):
     if not exists(dirname(fname)):
         os.makedirs(dirname(fname))
     plt.tight_layout()
