@@ -111,8 +111,8 @@ scipy.integrate.solve_ivp need a callable function $\frac{dy}{dt}=f(t,y)$, a tim
 Also solve_ivp only takes 1D ndarry. So remember to transform and reshape torch.tensor to 1D ndarray.
 
 ## Log likelihood estimation
-With the associated ODE: $dx=\bar{f}_{\theta}(x,t)dt$, we can compute log likelihood with:
-$$\log p_{0}(x(0))=\log p_{T}(x(T))+\int_{0}^{T}\nabla \cdot \bar{f}_{\theta}(x,t)dt$$
-And $\nabla \cdot \bar{f}_{\theta}(x,t)=E_{\epsilon \sim \mathcal{N}(0, I)}[\epsilon^{T}\nabla\bar{f}_{\theta}(x,t)\epsilon]$. With autograd, $\nabla\bar{f}_{\theta}(x,t)\epsilon$ can be evaluated and the integral can be solved by ODE solver as well.
+With the associated ODE: $dx=\bar{f_{\theta}}(x,t)dt$, we can compute log likelihood with:
+$$\log p_{0}(x(0))=\log p_{T}(x(T))+\int_{0}^{T}\nabla \cdot \bar{f_{\theta}}(x,t)dt$$
+And $\nabla \cdot \bar{f_{\theta}}(x,t)=E_{\epsilon \sim \mathcal{N}(0, I)}[\epsilon^{T}\nabla\bar{f_{\theta}}(x,t)\epsilon]$. With autograd, $\nabla\bar{f_{\theta}}(x,t)\epsilon$ can be evaluated and the integral can be solved by ODE solver as well.
 
 How? Remember what we throw into the solver is $\frac{dy}{dt}=f(t,y)$, and it can be rewrite into $dy=f(t,y)dt$. If we take integral on both side, we would have $\int_{0}^{T}dy=\int_{0}^{T}\nabla \cdot \bar{f}_{\theta}(y,t)dt=y(T)-y(0)$. And if we set $y(0)=0$, solver will output $y(T)$ directly. (I change x to y in order to follow Scipy notation).
