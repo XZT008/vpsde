@@ -218,22 +218,23 @@ class VQSDE(pl.LightningModule):
         return loss
 
     def on_validation_epoch_end(self):
-        epoch = self.current_epoch
-        if self.config.sampler == 'both':
-            pc_samples = self.pc_sampler(batch_size=self.config.pc_sample_batch_size,
-                                         use_corrector=self.config.use_corrector).detach().cpu()
-            ode_samples = self.ode_sampler(batch_size=self.config.ode_sample_batch_size, rtol=self.config.rtol,
-                                           atol=self.config.atol, method=self.config.method).detach().cpu()
-            show_samples(pc_samples, fname=f'./pc_samples/{epoch}.png')
-            show_samples(ode_samples, fname=f'./ode_samples/{epoch}.png')
-        elif self.config.sampler == 'pc':
-            pc_samples = self.pc_sampler(batch_size=self.config.pc_sample_batch_size,
-                                         use_corrector=self.config.use_corrector).detach().cpu()
-            show_samples(pc_samples, fname=f'./pc_samples/{epoch}.png')
-        elif self.config.sampler == 'ode':
-            ode_samples = self.ode_sampler(batch_size=self.config.ode_sample_batch_size, rtol=self.config.rtol,
-                                           atol=self.config.atol, method=self.config.method).detach().cpu()
-            show_samples(ode_samples, fname=f'./ode_samples/{epoch}.png')
+        if not self.if_tune:
+            epoch = self.current_epoch
+            if self.config.sampler == 'both':
+                pc_samples = self.pc_sampler(batch_size=self.config.pc_sample_batch_size,
+                                             use_corrector=self.config.use_corrector).detach().cpu()
+                ode_samples = self.ode_sampler(batch_size=self.config.ode_sample_batch_size, rtol=self.config.rtol,
+                                               atol=self.config.atol, method=self.config.method).detach().cpu()
+                show_samples(pc_samples, fname=f'./pc_samples/{epoch}.png')
+                show_samples(ode_samples, fname=f'./ode_samples/{epoch}.png')
+            elif self.config.sampler == 'pc':
+                pc_samples = self.pc_sampler(batch_size=self.config.pc_sample_batch_size,
+                                             use_corrector=self.config.use_corrector).detach().cpu()
+                show_samples(pc_samples, fname=f'./pc_samples/{epoch}.png')
+            elif self.config.sampler == 'ode':
+                ode_samples = self.ode_sampler(batch_size=self.config.ode_sample_batch_size, rtol=self.config.rtol,
+                                               atol=self.config.atol, method=self.config.method).detach().cpu()
+                show_samples(ode_samples, fname=f'./ode_samples/{epoch}.png')
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
