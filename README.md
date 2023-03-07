@@ -29,6 +29,11 @@ python run_script.py
 ```
 You can set hyperparameters in config.py based on tuning result. If not, it is set to be the value used in original paper. Note that you should set self.sampler in config.py to 'ode', 'pc', or 'both', if you want to generate sample every epoch during training and testing.
 
+
+BPD             |   Test DSM loss        |   Train DSM loss
+:-------------------------:|:-------------------------:|:-------------------------:
+![](https://github.com/XZT008/vpsde/blob/main/log/bpd.png)|![](https://github.com/XZT008/vpsde/blob/main/log/test_dsm_loss.png)|![](https://github.com/XZT008/vpsde/blob/main/log/train_loss.png)
+
 # Requirement:
 - torch, pytorch-lightning, torchvision
 
